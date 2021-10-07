@@ -1,0 +1,350 @@
+---
+title: "Practicum 2"
+author: "Maitri Shah, Dushyanth Gopichand and Mitali Bhandari"
+date: "13/07/2021"
+output: html_document
+---
+
+```{r}
+#install.packages("mongolite")
+library("mongolite")
+library("rvest")
+library("tidyverse")
+library("ggplot2")
+```
+
+**Q1.1 and 1.2.**
+
+```{r}
+
+#Creating an account. These are the username and password for the three group members
+
+#mongo_db_user_1- "maitri"
+#mongo_db_password1- "da5020maitrishah"
+#mongo_db_user_2- "dushyanth"
+#mongo_db_password2- "manHATton88"
+#mongo_db_user_3- "mitali"
+#mongo_db_password3- "mitali12345"
+
+
+#mongo_collection- "flights_2019" 
+#mongo_clustername- "da5020-cluster"
+#mongo_db_database- "airline_performance"
+```
+
+**Q1.3.** Create the database and load the data. Open R studio, connect to your mongoDB instance and create a database called airline_performance and a collection called flights_2019. You will need to use your connection string from Question 1.2 above. After which, insert the attached CSV data “2019_ONTIME_REPORTING_FSW.csv” using the insert
+
+```{r}
+# Creating a database loading the data
+
+mongo_url <- "mongodb+srv://dushyanth:manHATton88@da5020-cluster.rrwhc.mongodb.net/airline_performance?retryWrites=true&w=majority"
+mongodb <- mongo(collection = "flights_2019", db= "airline_performance", url = mongo_url)
+print(mongodb)
+airline_data <- read.csv("2019_ONTIME_REPORTING_FSW.csv",header = TRUE)
+dim(airline_data)
+
+#mongodb$insert(airline_data)
+names(airline_data)
+str(airline_data)
+View(airline_data)
+```
+
+**Question 2** — (10 points) Calculate the number of flights in the dataset. Also, derive the mean and standard deviation of the elapsed time for all flights. Explain the results.
+
+```{r}
+# The number of flights in the dataset
+flights <- mongodb$distinct("FL_NUM")
+length(flights)
+
+# Mean
+mongodb$aggregate('[{"$group":{"_id":"$null", "Mean":{"$avg":"$ELAPSED_TIME"}}}]')
+
+# Standard Deviation
+mongodb$aggregate('[{ "$group": {"_id": "$null", "SD": {"$stdDevSamp": "$ELAPSED_TIME"}}}]')
+
+```
+
+**Answer 2**
+There are 6853 flights in the dataset. 
+The Mean of elapsed time for all the flights is 174.5856.
+The Standard Deviation of elapsed time for all the flights is 92.64867.
+
+
+**Question 3** — (20 points) Calculate the total flights for each airline/operator. Visualize the top 10 results and show the carrier name and the frequency. Explain the results. •Ensure that you indicate the full name of each carrier, in lieu of the carrier code. This will require web scraping. Here is a helpful resource with the list of airline codes and the respective names. You can also use an alternative webpage of your choice. 
+
+```{r}
+# Loadind the data
+url <- "https://en.wikipedia.org/wiki/List_of_airline_codes"
+A <- read_html(url)
+Airline <- html_node(A, xpath = '/html/body/div[3]/div[3]/div[5]/div[1]/table')
+AirlineName <- html_table(Airline)
+
+# Tidying data
+Air <- AirlineName %>%
+  rename("Carrier_Code" = "IATA") %>%
+  select(Carrier_Code,Airline)
+
+# The total flights
+TotalFlights <- mongodb$aggregate('[
+  {"$group": {"_id": "$CARRIER_CODE","mycount": {"$sum": 1 }}}]')
+
+# Joining to display Airline names
+TotalFlight <- TotalFlights %>%
+  rename("Carrier_Code" = "_id", "Total_Flights" = "mycount")
+TF <- left_join(TotalFlight, Air, by = "Carrier_Code")
+
+# The top 10 Airlines
+Top10 <- TF %>%
+  arrange(Total_Flights) %>%
+  tail(10)
+
+# Visualizing using bar graph
+ggplot(data = Top10, aes(x = reorder(Airline,-Total_Flights), y = Total_Flights)) + 
+  geom_bar(stat = "Identity") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(x = "Airlines", y = "Total Flights", title = "The top 10 Airlines with maximum flights",
+       caption = "To visualize a bar graph of top 10 number of flights")
+  
+```
+
+**Answer 3**
+The total flights are maximum by the Southwest Airlines(556915). The least flights among the top 10 is by Frontier Airlines(35514). 
+
+
+**Question 4**- Select the top 5 airlines, from question 3 (above), and calculate the total flight time for each month (grouped by airline). Explain and visualize the results. Hint: the total flight time is not equivalent to the frequency of flights and ensure that you display the total hours and not the total minutes. 
+
+```{r}
+# We have selected carrier code for the top 5 Airlines from the question 3. Along with the elapsed time and the flight date. 
+# Substring function to extract the month from the date. 
+flightTime <- mongodb$aggregate('[
+{"$match": { "CARRIER_CODE": { "$in": ["WN","AA","OO","UA","DL"] }, "ELAPSED_TIME":{"$exists": true, "$ne":null}, 
+"FL_DATE":{"$exists": true, "$ne":null} }},
+{"$project": {"month": { "$substr": ["$FL_DATE", 5, 2]}, "CARRIER_CODE" : "$CARRIER_CODE", "ELAPSED_TIME" : "$ELAPSED_TIME" }}, 
+{"$group":{"_id":{"CARRIER_CODE" : "$CARRIER_CODE", "month" : "$month"}, "ELAPSED_TIME": {"$sum":1}}}]')
+
+# To convert into a dataframe. 
+flightTime_df <- do.call(data.frame, flightTime)
+
+# Renaming the column names 
+TotalFlightTime <- flightTime_df %>%
+  rename("Carrier_Code" = "X_id.CARRIER_CODE", "Month" = "X_id.month")
+
+# To display names of the airline, we have joined the table Air, which contains code and Airline names. 
+# Converting total minutes to Total hours by dividing elapsed time by 60. 
+Top_airlines <- TotalFlightTime %>% 
+  left_join(Air,by = "Carrier_Code") %>% 
+  mutate(Elapsed_hours = round(ELAPSED_TIME/ 60, 0))
+head(Top_airlines) 
+
+# Visualization using bar graph
+Top_airlines  %>%
+  group_by(Carrier_Code, Month)%>%
+  ggplot(aes(x= reorder(Month , -Elapsed_hours), y=Elapsed_hours ,fill = Airline)) + 
+  geom_bar(stat = "Identity") +
+  labs(x = "Month", y = "Total Flight Hours", 
+       title = "The total flight time for each month grouped by Airlines",
+        caption = "Visualization of top 5 Airlines showing the total flight time for each month")
+```
+
+**Answer 4** 
+In All months, the Southwest Airlines have maximum flight time. The delta Air lines have the lowest hours among the top 5 Airlines.
+The total flight time is maximum in the August month and minimum in the February month. 
+
+
+**Question 5** — (15 points) Analyze the data to determine if there are certain days of the week that the above 5 airlines are the busiest. Explain and visualize the results. You can define busy as either of the following: 1) the frequency of flights from Sun. to Sat., 2) the total flight hours from Sun. to Sat., 3) the average flight hours from Sun. to Sat., or 4) another metric. Justify your logic regarding how you defined busy and explain the results. Note: you do not need to conduct this analysis on a monthly basis; you can do this quarterly or annually. You can decide the best way to convey this data. 
+
+```{r}
+# We have selected carrier codes of the top 5 airlines
+# We have used datefromstring function to convert the column FL_DATE to date type. 
+
+BusyDay <- mongodb$aggregate('[
+{"$match": { "CARRIER_CODE": { "$in": ["WN","AA","OO","UA","DL"] }, 
+"FL_DATE":{"$exists": true, "$ne":null}, "ELAPSED_TIME":{"$exists": true, "$ne":null} }},
+{"$project": {"day": { "$dayOfWeek": {"date":{"$dateFromString" : {"dateString" : "$FL_DATE", "timezone" : "America/New_York"}}}}, "CARRIER_CODE" : "$CARRIER_CODE", "ELAPSED_TIME" : "$ELAPSED_TIME"}}, 
+{"$group":{"_id":{"CARRIER_CODE" : "$CARRIER_CODE", "day" : "$day"}, "ELAPSED_TIME": {"$sum":1}}}]')
+
+#Converting it into dataframe
+BusyDaydf <- do.call(data.frame, BusyDay)
+# To create Elapsed hour column 
+# Arranging in an descending order of Total flight hours hours. 
+BusyDay2 <- BusyDaydf %>%
+  rename("Carrier_Code" = "X_id.CARRIER_CODE", "DayOfWeek" = "X_id.day") %>%
+  mutate(Elapsed_hours = round(ELAPSED_TIME/ 60, 0)) %>%
+  group_by(Carrier_Code) %>%
+  arrange(desc(Elapsed_hours))
+BusyDay2
+# Plotting the data
+ggplot(data = BusyDay2, aes(x = reorder(DayOfWeek, -Elapsed_hours), y = Elapsed_hours, fill = Carrier_Code)) + 
+  geom_bar(stat =  "Identity") +
+  labs(x = "Day Of Week", y = "Total Flight Hours", title = "The Total flight hours from Sunday to Saturday for the top 5 Airlines",
+       subtitle = "1 = Sun, 2 = Mon, 3 = Tue, 4 = Wed, 5 = Thur, 6 = Fri, 7 = Sat" ,
+       caption = "To determine the busiest day of week for the top 5 Airlines")
+
+```
+
+**Answer 5** 
+We have defined 'Busy' by calculating the total flight hours for the top 5 airlines for all days of the week. 
+1. The Airline Southwest Airlines is busiest on Tuesday
+
+2. The American Airlines, United Airlines, SkyWest Airlines, and Delta Air Lines are busiest on Monday. 
+
+3. Among the 5 Airlines, Southwest Airline is busiest with 1507 total flights hours. 
+
+4. To conclude, Most of the airlines are busy on Monday. 
+
+
+**Question 6** — (20 points) Select any (1) aircraft, and explore the data to determine where it often travels. Calculate its average arrival and departure delays at the airports. After which analyze all the results to identify any patterns that are evident and also indicate which airline operates that aircraft. Explain your findings. Note: the TAIL_NUM can help you to identify each unique aircraft.  
+
+```{r}
+# The aircraft selected is N916NN which is run by American Airlines
+
+# To calculate most common destinations and average arrival delay at those airports
+dest_N916NN <- mongodb$aggregate('[
+                              {"$match" : {"TAIL_NUM" : "N916NN"}},
+                              {"$group" : {"_id": "$DEST",
+              "count" : {"$sum":1}, "arrdelay" : {"$avg" : "$ARR_DELAY"}}}, {"$sort":{"count":-1}},{"$limit":25}]', options = '{"allowDiskUse" : true}')
+names(dest_N916NN) <-  c("Destination", "No_of_flights", "Arrival_delay")
+print(dest_N916NN)
+
+#Visualizing common destination of N916NN
+ggplot(data= dest_N916NN, aes(x= reorder(Destination, -No_of_flights), y= No_of_flights, fill = Arrival_delay)) + geom_bar(stat= "identity") + theme(axis.text.x = element_text(angle = 90,  hjust = 1, vjust = 0.5)) + labs(x = "Airport Codes", y = "Number of Flights", fill = "Average arrival delay in mins") + ggtitle(expression(atop("Common destination of the Aircraft", atop(italic( "Tail Number - N916NN, fillied with avg arrival delay")))))
+
+
+# To calculate most common origin and average departure delay from those airports
+origin_N916NN <- mongodb$aggregate('[
+                              {"$match" : {"TAIL_NUM" : "N916NN"}},
+                              {"$group" : {"_id": "$ORIGIN",
+              "count" : {"$sum":1}, "depdelay" : {"$avg" : "$DEP_DELAY"}}}, {"$sort":{"count":-1}},{"$limit":25}]', options = '{"allowDiskUse" : true}')
+names(origin_N916NN) <-  c("Origin", "No_of_flights", "Departure_delay")
+print(origin_N916NN)
+
+#Visualizing common origin of N916NN
+ggplot(data= origin_N916NN, aes(x= reorder(Origin, -No_of_flights), y= No_of_flights, fill = Departure_delay)) + geom_bar(stat= "identity") + theme(axis.text.x = element_text(angle = 90,  hjust = 1, vjust = 0.5)) + labs(x = "Airport Codes", y = "Number of Flights", fill = "Average departure delay in mins") + ggtitle(expression(atop("Common origin of the Aircraft", atop(italic( "Tail Number - N916NN, fillied with avg departure delay")))))
+
+```
+
+**Explanation**
+The most common destination airports for aircraft N916NN are DFW (Dallas Fort Worth), ORD (Chicago) and PHX (Phoenix) with 64, 36 and 35 flights respectively. However the highest average arrival delays are for SAT (San Antonio) and EWR (Newark) with delays of ~64 and ~42 minutes and very less number of flights, 3 and 2 respectively. whereas the common destination airports have less average departure delay of ~9.7, ~8.6 and ~10.1 minutes for DFW, ORD and PHX respectively. 
+The most common origin airports for aircraft N916NN are also DFW (Dallas Fort Worth), PHX (Phoenix) and ORD (Chicago) with 65, 35 and 31 flights respectively. However the most delay occurs at LAX (Los Angeles) followed by SMF (Sacramento), the average delays are ~133 minutes and ~60 mins respectively and these have only 6 and 3 flights whereas the common origin airports have less average departure delay of ~12, ~11.38 and ~13.9 minutes for DFW, PHX and ORD respectively. N916NN is operated by American Airline.
+
+
+**Question 7** — (15 points) For each of the original 3 states (i.e. AZ, NV, CA), analyze the most popular outbound/destination airports. For example, if a flight originated in CA (at any of its airports), where do they often go? Comment on your findings and visualize the top results. 
+
+```{r}
+# For AZ
+mostpopularAZ <- mongodb$aggregate('[
+                              {"$match" : {"ORIGIN_ST" : "AZ"}},
+                              {"$group" : {"_id": "$DEST",
+              "count" : {"$sum":1}}}, {"$sort":{"count":-1}}]', options = '{"allowDiskUse" : true}')
+
+names(mostpopularAZ) <- c("Destination", "No_of_flights")
+mostpopularAZ
+
+#Visualization for top 25 results
+mostpopularAZ %>%
+  head(25) %>%
+  ggplot(aes(x= reorder(Destination, -No_of_flights), y= No_of_flights, fill= Destination)) +
+  geom_bar(stat= "identity") +
+  theme(axis.text.x = element_text(angle= 90, hjust=0)) + labs(x = "Airport Code", y = "No.of flight")  + ggtitle(expression(atop("25 most common destinations for flights originating from Arizona state" , atop(italic( "Chart to visualize destinations for AZ flights")))))
+```
+
+**Explanation**
+For AZ, the most common destinations are DEN (Denver) with 11270 flights, LAX(Los Angeles) with 10511 flights followed by DFW (Dallas Fort Worth) with 8555 flights with least number at PIE, 1 flight.
+
+```{r}
+#For NV  
+
+mostpopularNV <- mongodb$aggregate('[
+                              {"$match" : {"ORIGIN_ST" : "NV"}},
+                              {"$group" : {"_id": "$DEST",
+              "count" : {"$sum":1}}}, {"$sort":{"count":-1}}]', options = '{"allowDiskUse" : true}')
+
+names(mostpopularNV) <- c("Destination", "No_of_flights")
+mostpopularNV
+
+#Visualization for top 25 results
+mostpopularNV %>%
+  head(25) %>%
+  ggplot(aes(x= reorder(Destination, -No_of_flights), y= No_of_flights, fill= Destination)) +
+  geom_bar(stat= "identity") +
+  theme(axis.text.x = element_text(angle= 90, hjust=0)) + labs(x = "Airport Code", y = "No.of flight")  + ggtitle(expression(atop("25 most common destinations for flights originating from Nevada state" , atop(italic( "Chart to visualize destinations for NV flights")))))
+```
+
+**Explanation**
+For NV, the most common destinations are LAX(Los Angeles) with 15150 flights followed by SFO (San Fransico) with 10164 flights with least number at OGG, 10 flights.
+
+```{r}
+#For CA
+
+mostpopularCA <- mongodb$aggregate('[
+                              {"$match" : {"ORIGIN_ST" : "CA"}},
+                              {"$group" : {"_id": "$DEST",
+              "count" : {"$sum":1}}}, {"$sort":{"count":-1}}]', options = '{"allowDiskUse" : true}')
+
+names(mostpopularCA) <-  c("Destination", "No_of_flights")
+mostpopularCA
+
+#Visualization for top 25 results
+mostpopularCA %>%
+  head(25) %>%
+  ggplot(aes(x= reorder(Destination, -No_of_flights), y= No_of_flights, fill= Destination)) +
+  geom_bar(stat= "identity") +
+  theme(axis.text.x = element_text(angle= 90, hjust=0)) + labs(x = "Airport Code", y = "No.of flight")  + ggtitle(expression(atop("25 most common destinations for flights originating from California state" , atop(italic( "Chart to visualize destinations for CA flights")))))
+```
+
+**Explanation**
+For CA, the most common destinations are PHX(Phoenix) with 54023 flights followed by LAS (Los Angeles) with 53092 flights and SFO (San Fransisco) 49600 flights with least number at SBN (South Bend International Airport), 2 flights.
+
+**Question 8** — (+10 optional/bonus points) Build one additional query to test a hypothesis or answer a question that you have about the dataset. Your query should retrieve data from MongoDB and evaluate the pattern/trend that you intend to explore. 
+Prepare supporting visualizations for your analysis. If necessary, you can integrate any additional data that provide more details or support your analysis/findings. 
+
+```{r}
+#Query to determine the longest distance traveled by an Airline
+long_ft <- mongodb$aggregate('[{"$project" : {"CARRIER_CODE":1, "ORIGIN":1, "DEST":1, "FL_NUM":1, "DISTANCE":1, "ELAPSED_TIME":1, "_id":0}}, {"$sort": { "DISTANCE" :-1}}, {"$limit" :5}]')
+print(long_ft)
+
+#Query to determine the shortest distance traveled by an Airline
+short_ft <- mongodb$aggregate('[{"$project" : {"CARRIER_CODE":1, "ORIGIN":1, "DEST":1, "FL_NUM":1, "DISTANCE":1, "ELAPSED_TIME":1, "_id":0}}, {"$sort": { "DISTANCE": 1}}, {"$limit" :5}]')
+print(short_ft)
+
+#Query to calculate the Total distance
+dist_trv <-mongodb$aggregate('[{"$group":  {
+     "_id":"$CARRIER_CODE", "sum": {"$sum":"$DISTANCE"}}}]')
+names(dist_trv) <- c("Airline_code", "Total_distance")
+print(dist_trv)
+
+
+#Visualization of total distance covered
+ggplot(data = dist_trv, aes(x= reorder(Airline_code, -Total_distance), y= Total_distance)) + geom_bar(stat= "identity") + theme(axis.text.x = element_text(angle= 90, hjust=0)) + labs(x = "Airline Code", y = "Distance in miles")  + ggtitle(expression(atop("Total distance travelled by all airlines" , atop(italic( "in the year 2019")))))
+
+#Query to find the avg arrival & dept delay for the month of June
+jan_data<- mongodb$aggregate('[
+{"$match": {"FL_DATE" : { "$regex" : "2019-06", "$options" : "i" }, "TAIL_NUM":{"$exists": true, "$ne":null}, "DISTANCE":{"$exists": true, "$ne":null}}},
+{"$group":  {"_id":"$CARRIER_CODE", "avg_arr": {"$avg":"$ARR_DELAY"}, "avg_dept": {"$avg" : "$DEP_DELAY"}, "max_dist": {"$max":"$DISTANCE"}}}]')
+names(jan_data) <- c("Airline_code", "Average_arrival_delay", "Average_departure_delay", "Max_distance")
+print(jan_data)
+
+#Visualizing avg arrival delay
+ggplot(data= jan_data, aes(x= reorder(Airline_code, -Average_arrival_delay), y= Average_arrival_delay, fill = Airline_code)) + geom_bar(stat= "identity") + theme(axis.text.x = element_text(angle = 90,  hjust = 1, vjust = 0.5)) + labs(x = "Airline Codes", y = "Time in mins") + ggtitle(expression(atop("Average Arrival Delay of all Airlines.", atop(italic( "in the month of June 2019")))))
+
+#Visualizing avg departure delay
+ggplot(data= jan_data, aes(x= reorder(Airline_code, -Average_departure_delay), y= Average_departure_delay, fill = Airline_code)) + geom_bar(stat= "identity") + theme(axis.text.x = element_text(angle = 90,  hjust = 1, vjust = 0.5)) + labs(x = "Airline Codes", y = "Time in mins") + ggtitle(expression(atop("Average Departure Delay of all Airlines.", atop(italic( "in the month of June 2019")))))
+
+#Visualizing max distance in June month
+ggplot(data= jan_data, aes(x= reorder(Airline_code, -Max_distance), y= Max_distance, fill = Airline_code)) + geom_bar(stat= "identity") + theme(axis.text.x = element_text(angle = 90,  hjust = 1, vjust = 0.5)) + labs(x = "Airline Codes", y = "Distance in miles") + ggtitle(expression(atop("Maximum Distance travelled by all Airlines", atop(italic( "in the month of June 2019")))))
+```
+
+**Explanation**
+As a team, we had a few questions for the dataset.
+Our main agenda was to find out the average arrival and departure delays and max distance traveled by all Airlines for the month of June. We choose June, as it was the beginning of the summer month where most people tend to travel.
+
+We found out that most Airlines have a average arrival delay of under 20 minutes, except for ExpressJet(EV),Frontier Airlines (F9) and American Airline (AA). ExpressJet have the max arrival delay of 1 hour 4 mins whereas, Delta Airlines (DL) have a least arrival delay of 10 mins. Similarly, we found that most airlines have a average departure delay of 20 mins, expect ExpressJet (EV), Frontier Airlines (F9) and American Airlines(AA). Again ExpressJet(EV) has the max departure delay of 1 hour 1 mins and Alaska Airlines (AS) has the least departure delay of 11 mins.
+
+we found out that American Airlines (AA) covers a distance of 2979 miles for the entire month of June, followed by Hawaiian Airlines (HA) that covers 2917 miles. Alaska Airlines(AS), Delta Air Lines (DL), United Airlines (UA) and JetBlue (B6) all these airlines cover a distance of 2704 miles. It's not surprising to see ExpressJet(EV) in the last position, since it has the max arrival and departure delay, and covers a distance of 936 miles.
+
+We had a few additional questions, hence we decided to explore.
+First, we wanted to determine the top five longest and shortest distance traveled by a airline for the year 2019. We found out that flight number AA 684(American Airline), from PHX (Phoenix, Arizona) to LIH (Lihue, Hawaii) is the longest distance traveled in the year 2019, which covers a distance of 2979 miles at 6 hours and 32 minutes. Similarly, we also found that flight number OO 5709 (Sky West Airlines), from SFO (San Francisco International Airport, California) to STS (Charles M. Schulz–Sonoma County Airport at Sonoma County, California) which covers a distance of 66 miles under 34 minutes. 
+
+Second, We wanted to find out the total distance traveled by all airlines in the year 2019. We found out that Southwest Airlines, American Airline and United Airline takes the top three places. Southwest Airlines covers a total distance of 492356389 miles in the entire year of 2019, followed by AA (American Airline) which covers 465726957 miles and United Airlines (UA) which covers 393226537 miles. ExpressJet (EV) covers the least distance of at around 127500 miles of the year 2019.
+
+
