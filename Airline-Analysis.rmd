@@ -1,5 +1,5 @@
 ---
-title: "Practicum 2"
+title: "Airline data Anaysis"
 author: "Mitali Bhandari"
 date: "13/05/2021"
 output: html_document
