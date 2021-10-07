@@ -1,7 +1,7 @@
 ---
 title: "Practicum 2"
-author: "Maitri Shah, Dushyanth Gopichand and Mitali Bhandari"
-date: "13/07/2021"
+author: "Mitali Bhandari"
+date: "13/05/2021"
 output: html_document
 ---
 
@@ -333,18 +333,3 @@ ggplot(data= jan_data, aes(x= reorder(Airline_code, -Average_departure_delay), y
 #Visualizing max distance in June month
 ggplot(data= jan_data, aes(x= reorder(Airline_code, -Max_distance), y= Max_distance, fill = Airline_code)) + geom_bar(stat= "identity") + theme(axis.text.x = element_text(angle = 90,  hjust = 1, vjust = 0.5)) + labs(x = "Airline Codes", y = "Distance in miles") + ggtitle(expression(atop("Maximum Distance travelled by all Airlines", atop(italic( "in the month of June 2019")))))
 ```
-
-**Explanation**
-As a team, we had a few questions for the dataset.
-Our main agenda was to find out the average arrival and departure delays and max distance traveled by all Airlines for the month of June. We choose June, as it was the beginning of the summer month where most people tend to travel.
-
-We found out that most Airlines have a average arrival delay of under 20 minutes, except for ExpressJet(EV),Frontier Airlines (F9) and American Airline (AA). ExpressJet have the max arrival delay of 1 hour 4 mins whereas, Delta Airlines (DL) have a least arrival delay of 10 mins. Similarly, we found that most airlines have a average departure delay of 20 mins, expect ExpressJet (EV), Frontier Airlines (F9) and American Airlines(AA). Again ExpressJet(EV) has the max departure delay of 1 hour 1 mins and Alaska Airlines (AS) has the least departure delay of 11 mins.
-
-we found out that American Airlines (AA) covers a distance of 2979 miles for the entire month of June, followed by Hawaiian Airlines (HA) that covers 2917 miles. Alaska Airlines(AS), Delta Air Lines (DL), United Airlines (UA) and JetBlue (B6) all these airlines cover a distance of 2704 miles. It's not surprising to see ExpressJet(EV) in the last position, since it has the max arrival and departure delay, and covers a distance of 936 miles.
-
-We had a few additional questions, hence we decided to explore.
-First, we wanted to determine the top five longest and shortest distance traveled by a airline for the year 2019. We found out that flight number AA 684(American Airline), from PHX (Phoenix, Arizona) to LIH (Lihue, Hawaii) is the longest distance traveled in the year 2019, which covers a distance of 2979 miles at 6 hours and 32 minutes. Similarly, we also found that flight number OO 5709 (Sky West Airlines), from SFO (San Francisco International Airport, California) to STS (Charles M. Schulz–Sonoma County Airport at Sonoma County, California) which covers a distance of 66 miles under 34 minutes. 
-
-Second, We wanted to find out the total distance traveled by all airlines in the year 2019. We found out that Southwest Airlines, American Airline and United Airline takes the top three places. Southwest Airlines covers a total distance of 492356389 miles in the entire year of 2019, followed by AA (American Airline) which covers 465726957 miles and United Airlines (UA) which covers 393226537 miles. ExpressJet (EV) covers the least distance of at around 127500 miles of the year 2019.
-
-
